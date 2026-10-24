@@ -285,6 +285,15 @@ func TestMigrateSchema_AddsDirectPath(t *testing.T) {
 	if haveURL == "" {
 		t.Error("legacy row url should have survived migration")
 	}
+	var haveQuotedID sql.NullString
+	if err := s.db.QueryRow(
+		"SELECT quoted_id FROM messages WHERE id = ?", "legacy-1",
+	).Scan(&haveQuotedID); err != nil {
+		t.Fatalf("select quoted_id after migration: %v", err)
+	}
+	if haveQuotedID.Valid {
+		t.Errorf("legacy row quoted_id should be NULL, got %q", haveQuotedID.String)
+	}
 
 	// Second Open must be a no-op — verifies migrateSchema is idempotent.
 	s.Close()
@@ -410,5 +419,42 @@ func TestOpen_StorePermissions(t *testing.T) {
 	}
 	if got := msgInfo.Mode().Perm(); got != 0o600 {
 		t.Errorf("messages.db mode: want 0600, got %o", got)
+	}
+}
+
+func TestStoreMessage_QuotedIDRoundTrip(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	chatJID := "447700000001@s.whatsapp.net"
+	if err := s.StoreMessage(ctx, Message{
+		ID:        "reply-1",
+		ChatJID:   chatJID,
+		Sender:    chatJID,
+		Content:   "quoted reply round trip",
+		Timestamp: time.Date(2026, 1, 13, 9, 0, 0, 0, time.UTC),
+		QuotedID:  "orig-42",
+	}, nil, nil, nil, 0); err != nil {
+		t.Fatalf("StoreMessage: %v", err)
+	}
+
+	msgs, err := s.ListMessages(ctx, ListMessagesParams{
+		ChatJID: chatJID,
+		Query:   "quoted reply round trip",
+		Limit:   5,
+	})
+	if err != nil {
+		t.Fatalf("ListMessages: %v", err)
+	}
+	if len(msgs) != 1 || msgs[0].QuotedID != "orig-42" {
+		t.Fatalf("expected one message with QuotedID orig-42, got %+v", msgs)
+	}
+
+	mc, err := s.GetMessageContext(ctx, "reply-1", 0, 0)
+	if err != nil {
+		t.Fatalf("GetMessageContext: %v", err)
+	}
+	if mc.Message.QuotedID != "orig-42" {
+		t.Fatalf("GetMessageContext QuotedID = %q, want orig-42", mc.Message.QuotedID)
 	}
 }

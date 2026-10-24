@@ -21,6 +21,13 @@ func (s *Store) FormatMessage(ctx context.Context, m Message, showChatInfo bool)
 		b.WriteString("] ")
 	}
 
+	// Expose which message this one quotes, so clients can thread replies.
+	if m.QuotedID != "" {
+		b.WriteString("[Reply to: ")
+		b.WriteString(m.QuotedID)
+		b.WriteString("] ")
+	}
+
 	if showChatInfo && m.ChatName != "" {
 		b.WriteString("Chat: ")
 		b.WriteString(m.ChatName)

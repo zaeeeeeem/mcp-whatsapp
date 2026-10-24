@@ -89,6 +89,26 @@ func TestFormatMessage_TextMessageCarriesID(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_ReplyCarriesQuotedID(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	m := Message{
+		ID:        "3EB0REPLY1",
+		ChatJID:   "447700000001@s.whatsapp.net",
+		Sender:    "me",
+		Content:   "yes, that one",
+		Timestamp: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
+		IsFromMe:  true,
+		QuotedID:  "3EB0ORIG99",
+	}
+	got := s.FormatMessage(ctx, m, false)
+	want := "[2026-01-02 03:04:05] [ID: 3EB0REPLY1] [Reply to: 3EB0ORIG99] From: Me: yes, that one\n"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func TestFormatMessage_NoChatPrefixWhenNotShown(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

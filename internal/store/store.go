@@ -55,6 +55,10 @@ type Message struct {
 	DirectPath  string `json:"direct_path,omitempty"`
 	ChatName    string `json:"chat_name,omitempty"`
 	PhoneNumber string `json:"phone_number,omitempty"`
+	// QuotedID is the WhatsApp stanza ID of the message this one replies to
+	// (quotes), taken from the payload's ContextInfo. Empty for non-replies
+	// and for rows written before this column existed.
+	QuotedID string `json:"quoted_id,omitempty"`
 }
 
 // Chat is a cached WhatsApp chat.
@@ -174,10 +178,10 @@ func (s *Store) StoreMessage(ctx context.Context, m Message, mediaKey, fileSHA25
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO messages
-		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, direct_path, media_key, file_sha256, file_enc_sha256, file_length)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, chat_jid, sender, content, timestamp, is_from_me, media_type, filename, url, direct_path, media_key, file_sha256, file_enc_sha256, file_length, quoted_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.ChatJID, m.Sender, m.Content, m.Timestamp, m.IsFromMe,
-		m.MediaType, m.Filename, m.URL, m.DirectPath, mediaKey, fileSHA256, fileEncSHA256, fileLength,
+		m.MediaType, m.Filename, m.URL, m.DirectPath, mediaKey, fileSHA256, fileEncSHA256, fileLength, m.QuotedID,
 	)
 	return err
 }
@@ -324,6 +328,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	file_enc_sha256 BLOB,
 	file_length INTEGER,
 	poll_options_json TEXT,
+	quoted_id TEXT,
 	PRIMARY KEY (id, chat_jid),
 	FOREIGN KEY (chat_jid) REFERENCES chats(jid)
 );
@@ -350,6 +355,7 @@ func migrateSchema(db *sql.DB) error {
 	defer rows.Close()
 	hasPollOptions := false
 	hasDirectPath := false
+	hasQuotedID := false
 	for rows.Next() {
 		var (
 			cid        int
@@ -368,6 +374,9 @@ func migrateSchema(db *sql.DB) error {
 		if name == "direct_path" {
 			hasDirectPath = true
 		}
+		if name == "quoted_id" {
+			hasQuotedID = true
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate table_info(messages): %w", err)
@@ -380,6 +389,11 @@ func migrateSchema(db *sql.DB) error {
 	if !hasDirectPath {
 		if _, err := db.Exec("ALTER TABLE messages ADD COLUMN direct_path TEXT"); err != nil {
 			return fmt.Errorf("add column direct_path: %w", err)
+		}
+	}
+	if !hasQuotedID {
+		if _, err := db.Exec("ALTER TABLE messages ADD COLUMN quoted_id TEXT"); err != nil {
+			return fmt.Errorf("add column quoted_id: %w", err)
 		}
 	}
 	return nil

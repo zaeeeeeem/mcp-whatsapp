@@ -11,7 +11,7 @@ import (
 
 // listMessageColumns is the 8-column projection shared by ListMessages and
 // queryContextWindow.
-const listMessageColumns = "messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.media_type"
+const listMessageColumns = "messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.media_type, messages.quoted_id"
 
 // ListMessagesParams holds the filters accepted by ListMessages. Zero values
 // mean "unset" except for Limit, which defaults to 20 when <= 0.
@@ -258,7 +258,7 @@ func (s *Store) SearchContacts(ctx context.Context, query string) ([]Contact, er
 // windows from the same chat.
 func (s *Store) GetMessageContext(ctx context.Context, messageID string, before, after int) (*MessageContext, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.chat_jid, messages.media_type
+		SELECT messages.timestamp, messages.sender, chats.name, messages.content, messages.is_from_me, chats.jid, messages.id, messages.chat_jid, messages.media_type, messages.quoted_id
 		FROM messages
 		JOIN chats ON messages.chat_jid = chats.jid
 		WHERE messages.id = ?`, messageID)
@@ -273,8 +273,9 @@ func (s *Store) GetMessageContext(ctx context.Context, messageID string, before,
 		id        string
 		msgChat   string
 		mediaType sql.NullString
+		quotedID  sql.NullString
 	)
-	if err := row.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &msgChat, &mediaType); err != nil {
+	if err := row.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &msgChat, &mediaType, &quotedID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("message with ID %s not found", messageID)
 		}
@@ -290,6 +291,7 @@ func (s *Store) GetMessageContext(ctx context.Context, messageID string, before,
 		IsFromMe:  isFromMe,
 		MediaType: mediaType.String,
 		ChatName:  chatName.String,
+		QuotedID:  quotedID.String,
 	}
 	target.IsGroup = strings.HasSuffix(target.ChatJID, "@g.us")
 	target.SenderPhone = s.resolveSenderPhone(target.Sender)
@@ -384,7 +386,7 @@ func (s *Store) queryContextWindow(ctx context.Context, chatJID string, anchor t
 	return out, rows.Err()
 }
 
-// scanListMessageRow scans the 8-column projection used by list_messages and
+// scanListMessageRow scans the 9-column projection used by list_messages and
 // the context window queries.
 func (s *Store) scanListMessageRow(row interface {
 	Scan(dest ...any) error
@@ -398,8 +400,9 @@ func (s *Store) scanListMessageRow(row interface {
 		chatJID   string
 		id        string
 		mediaType sql.NullString
+		quotedID  sql.NullString
 	)
-	if err := row.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &mediaType); err != nil {
+	if err := row.Scan(&ts, &sender, &chatName, &content, &isFromMe, &chatJID, &id, &mediaType, &quotedID); err != nil {
 		return Message{}, err
 	}
 	m := Message{
@@ -411,6 +414,7 @@ func (s *Store) scanListMessageRow(row interface {
 		IsFromMe:  isFromMe,
 		MediaType: mediaType.String,
 		ChatName:  chatName.String,
+		QuotedID:  quotedID.String,
 	}
 	m.IsGroup = strings.HasSuffix(m.ChatJID, "@g.us")
 	m.SenderPhone = s.resolveSenderPhone(m.Sender)

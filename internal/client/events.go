@@ -122,6 +122,7 @@ func (c *Client) normalizeIncomingMessage(
 			Filename:   filename,
 			URL:        url,
 			DirectPath: directPath,
+			QuotedID:   quotedStanzaID(raw),
 		},
 		mediaKey:      mediaKey,
 		fileSHA256:    fileSHA256,
@@ -406,6 +407,51 @@ func extractTextContent(msg *waProto.Message) string {
 	}
 	if ext := msg.GetExtendedTextMessage(); ext != nil {
 		return ext.GetText()
+	}
+	// Media captions: without these an image/video/document sent with a
+	// caption is stored with empty content.
+	if c := msg.GetImageMessage().GetCaption(); c != "" {
+		return c
+	}
+	if c := msg.GetVideoMessage().GetCaption(); c != "" {
+		return c
+	}
+	if c := msg.GetDocumentMessage().GetCaption(); c != "" {
+		return c
+	}
+	if c := msg.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage().GetCaption(); c != "" {
+		return c
+	}
+	return ""
+}
+
+// quotedStanzaID returns the stanza ID of the message that msg quotes (replies
+// to), or "" when it is not a reply. A plain Conversation has no ContextInfo;
+// text replies arrive as ExtendedTextMessage, and media replies (including
+// voice notes) carry ContextInfo on their own sub-message.
+func quotedStanzaID(msg *waProto.Message) string {
+	if msg == nil {
+		return ""
+	}
+	candidates := []interface{ GetContextInfo() *waProto.ContextInfo }{
+		msg.GetExtendedTextMessage(),
+		msg.GetImageMessage(),
+		msg.GetAudioMessage(),
+		msg.GetVideoMessage(),
+		msg.GetDocumentMessage(),
+		msg.GetDocumentWithCaptionMessage().GetMessage().GetDocumentMessage(),
+		msg.GetStickerMessage(),
+		msg.GetContactMessage(),
+		msg.GetLocationMessage(),
+		msg.GetLiveLocationMessage(),
+		msg.GetPollCreationMessage(),
+		msg.GetPollCreationMessageV2(),
+		msg.GetPollCreationMessageV3(),
+	}
+	for _, c := range candidates {
+		if id := c.GetContextInfo().GetStanzaID(); id != "" {
+			return id
+		}
 	}
 	return ""
 }

@@ -184,3 +184,77 @@ func TestExtractDirectPathFromURL(t *testing.T) {
 		})
 	}
 }
+
+func TestQuotedStanzaID(t *testing.T) {
+	ctxInfo := func(id string) *waProto.ContextInfo {
+		return &waProto.ContextInfo{StanzaID: proto.String(id)}
+	}
+	cases := []struct {
+		name string
+		msg  *waProto.Message
+		want string
+	}{
+		{"nil", nil, ""},
+		{"plain conversation", &waProto.Message{Conversation: proto.String("hi")}, ""},
+		{"extended text without context", &waProto.Message{
+			ExtendedTextMessage: &waProto.ExtendedTextMessage{Text: proto.String("hi")},
+		}, ""},
+		{"text reply", &waProto.Message{
+			ExtendedTextMessage: &waProto.ExtendedTextMessage{
+				Text:        proto.String("yes"),
+				ContextInfo: ctxInfo("3EB0TEXT01"),
+			},
+		}, "3EB0TEXT01"},
+		{"voice note reply", &waProto.Message{
+			AudioMessage: &waProto.AudioMessage{
+				PTT:         proto.Bool(true),
+				ContextInfo: ctxInfo("3EB0AUDIO1"),
+			},
+		}, "3EB0AUDIO1"},
+		{"image reply", &waProto.Message{
+			ImageMessage: &waProto.ImageMessage{ContextInfo: ctxInfo("3EB0IMG001")},
+		}, "3EB0IMG001"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quotedStanzaID(tc.msg); got != tc.want {
+				t.Fatalf("quotedStanzaID() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractTextContent_MediaCaptions(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  *waProto.Message
+		want string
+	}{
+		{"image with caption", &waProto.Message{
+			ImageMessage: &waProto.ImageMessage{Caption: proto.String("look at this")},
+		}, "look at this"},
+		{"image without caption", &waProto.Message{
+			ImageMessage: &waProto.ImageMessage{},
+		}, ""},
+		{"video with caption", &waProto.Message{
+			VideoMessage: &waProto.VideoMessage{Caption: proto.String("clip")},
+		}, "clip"},
+		{"document with caption", &waProto.Message{
+			DocumentMessage: &waProto.DocumentMessage{Caption: proto.String("the report")},
+		}, "the report"},
+		{"document-with-caption wrapper", &waProto.Message{
+			DocumentWithCaptionMessage: &waProto.FutureProofMessage{
+				Message: &waProto.Message{
+					DocumentMessage: &waProto.DocumentMessage{Caption: proto.String("wrapped")},
+				},
+			},
+		}, "wrapped"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractTextContent(tc.msg); got != tc.want {
+				t.Fatalf("extractTextContent() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
