@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"log"
+	"time"
 
 	"go.mau.fi/whatsmeow/types/events"
 
@@ -35,6 +37,17 @@ func (p *productionDriver) StartPairing(ctx context.Context, onQR func(string), 
 				onSuccess()
 				return
 			}
+		}
+		// The QR channel closed without a successful pair (timeout or error).
+		// whatsmeow drops the socket at that point, so start a fresh pairing
+		// flow; otherwise /pair keeps serving an expired QR.
+		if ctx.Err() != nil {
+			return
+		}
+		p.c.Disconnect()
+		time.Sleep(5 * time.Second)
+		if err := p.StartPairing(ctx, onQR, onSuccess); err != nil {
+			log.Printf("restart pairing after QR timeout: %v", err)
 		}
 	}()
 	// Must call Connect AFTER QRChannel per whatsmeow docs.
